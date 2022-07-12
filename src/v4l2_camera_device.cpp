@@ -142,7 +142,7 @@ bool V4l2CameraDevice::open()
 
 bool V4l2CameraDevice::start()
 {
-  RCLCPP_INFO(rclcpp::get_logger("v4l2_camera"), "Starting camera");
+  RCLCPP_INFO(rclcpp::get_logger("v4l2_camera"), "Starting camera Testje");
   if (!initMemoryMapping()) {
     return false;
   }

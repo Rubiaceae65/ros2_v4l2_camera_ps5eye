@@ -22,6 +22,19 @@
 #include <vector>
 #include <algorithm>
 
+
+//
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <boost/make_shared.hpp>
+//
+#include "opencv2/core/ocl.hpp"
+#include "opencv2/highgui.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/imgproc.hpp"
+
+//
 #include "v4l2_camera/fourcc.hpp"
 
 #include "rclcpp_components/register_node_macro.hpp"
@@ -35,14 +48,32 @@ V4L2Camera::V4L2Camera(rclcpp::NodeOptions const & options)
 : rclcpp::Node{"v4l2_camera", options},
   canceled_{false}
 {
+
+
   // Prepare publisher
   // This should happen before registering on_set_parameters_callback,
   // else transport plugins will fail to declare their parameters
   if (options.use_intra_process_comms()) {
+    RCLCPP_INFO(rclcpp::get_logger("v4l2_camera"), "Using intra_process_comss");
+
     image_pub_ = create_publisher<sensor_msgs::msg::Image>("image_raw", 10);
     info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", 10);
+
+    image_right_pub_ = create_publisher<sensor_msgs::msg::Image>("right/image_raw", 10);
+    info_right_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("right/camera_info", 10);
+
+    image_left_pub_ = create_publisher<sensor_msgs::msg::Image>("left/image_raw", 10);
+    info_left_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("left/camera_info", 10);
+
+
+
   } else {
-    camera_transport_pub_ = image_transport::create_camera_publisher(this, "image_raw");
+
+     camera_transport_pub_ = image_transport::create_camera_publisher(this, "image_raw");
+     camera_right_transport_pub_ = image_transport::create_camera_publisher(this, "right/image_raw");
+     camera_left_transport_pub_ = image_transport::create_camera_publisher(this, "left/image_raw");
+
+
   }
 
   // Prepare camera
@@ -56,6 +87,7 @@ V4L2Camera::V4L2Camera(rclcpp::NodeOptions const & options)
     return;
   }
 
+  //TODO
   cinfo_ = std::make_shared<camera_info_manager::CameraInfoManager>(this, camera_->getCameraName());
 
   // Read parameters and set up callback
@@ -79,12 +111,17 @@ V4L2Camera::V4L2Camera(rclcpp::NodeOptions const & options)
         }
 
         auto stamp = now();
+        //img->encoding = sensor_msgs::image_encodings::RGB8;
+	
         if (img->encoding != output_encoding_) {
           img = convert(*img);
         }
+	
         img->header.stamp = stamp;
         img->header.frame_id = camera_frame_id_;
 
+	// publish full image
+	/*
         auto ci = std::make_unique<sensor_msgs::msg::CameraInfo>(cinfo_->getCameraInfo());
         if (!checkCameraInfo(*img, *ci)) {
           *ci = sensor_msgs::msg::CameraInfo{};
@@ -98,9 +135,58 @@ V4L2Camera::V4L2Camera(rclcpp::NodeOptions const & options)
           RCLCPP_DEBUG_STREAM(get_logger(), "Image message address [PUBLISH]:\t" << img.get());
           image_pub_->publish(std::move(img));
           info_pub_->publish(std::move(ci));
+
         } else {
           camera_transport_pub_.publish(*img, *ci);
         }
+        */
+	// publish right image
+	
+        auto img_right = convert_cvbridge(*img, 1);
+ 	img_right->header.stamp = stamp;
+        img_right->header.frame_id = camera_frame_id_;
+
+        auto ci_right = std::make_unique<sensor_msgs::msg::CameraInfo>(cinfo_->getCameraInfo());
+        if (!checkCameraInfo(*img_right, *ci_right)) {
+          *ci_right = sensor_msgs::msg::CameraInfo{};
+          ci_right->height = img_right->height;
+          ci_right->width = img_right->width;
+        }
+
+        ci_right->header.stamp = stamp;
+
+        if (get_node_options().use_intra_process_comms()) {
+          RCLCPP_DEBUG_STREAM(get_logger(), "Image message address [PUBLISH]:\t" << img.get());
+	  image_right_pub_->publish(std::move(img_right));
+          info_right_pub_->publish(std::move(ci_right));
+        } else {
+          camera_right_transport_pub_.publish(*img_right, *ci_right);
+        }
+        // publish left image
+	
+        auto img_left = convert_cvbridge(*img, 2);
+ 	img_left->header.stamp = stamp;
+        img_left->header.frame_id = camera_frame_id_;
+
+        auto ci_left = std::make_unique<sensor_msgs::msg::CameraInfo>(cinfo_->getCameraInfo());
+        if (!checkCameraInfo(*img_left, *ci_left)) {
+          *ci_left = sensor_msgs::msg::CameraInfo{};
+          ci_left->height = img_left->height;
+          ci_left->width = img_left->width;
+        }
+
+        ci_left->header.stamp = stamp;
+
+        if (get_node_options().use_intra_process_comms()) {
+          RCLCPP_DEBUG_STREAM(get_logger(), "Image message address [PUBLISH]:\t" << img.get());
+	  image_right_pub_->publish(std::move(img_right));
+          info_right_pub_->publish(std::move(ci_right));
+        } else {
+          camera_left_transport_pub_.publish(*img_left, *ci_left);
+        }
+	
+
+	// end Whhile
       }
     }
   };
@@ -467,6 +553,10 @@ static void yuyv2rgb(unsigned char const * YUV, unsigned char * RGB, int NumPixe
   }
 }
 
+/*
+  opencl capture https://www.spinics.net/lists/linux-media/msg56118.html
+*/
+
 sensor_msgs::msg::Image::UniquePtr V4L2Camera::convert(sensor_msgs::msg::Image const & img) const
 {
   RCLCPP_DEBUG(
@@ -477,6 +567,7 @@ sensor_msgs::msg::Image::UniquePtr V4L2Camera::convert(sensor_msgs::msg::Image c
   if (img.encoding == sensor_msgs::image_encodings::YUV422 &&
     output_encoding_ == sensor_msgs::image_encodings::RGB8)
   {
+   
     auto outImg = std::make_unique<sensor_msgs::msg::Image>();
     outImg->width = img.width;
     outImg->height = img.height;
@@ -489,6 +580,7 @@ sensor_msgs::msg::Image::UniquePtr V4L2Camera::convert(sensor_msgs::msg::Image c
         outImg->width);
     }
     return outImg;
+    
   } else {
     RCLCPP_WARN_ONCE(
       get_logger(),
@@ -496,6 +588,52 @@ sensor_msgs::msg::Image::UniquePtr V4L2Camera::convert(sensor_msgs::msg::Image c
     return nullptr;
   }
 }
+
+sensor_msgs::msg::Image::UniquePtr V4L2Camera::convert_cvbridge(sensor_msgs::msg::Image const & img, int cam = 0) const
+{
+  RCLCPP_DEBUG(get_logger(),
+    std::string{"Coverting: "} + img.encoding + " -> " + output_encoding_);
+
+  auto tracked_object = std::shared_ptr<const void>{};
+  auto cvImg = cv_bridge::toCvShare(img, tracked_object);
+ //if (cvImg->image.rows > 60 && cvImg->image.cols > 60)
+  //    cv::circle(cvImg->image, cv::Point(500, 500), 100, CV_RGB(255,0,0), 50);
+
+
+//  cv::Mat cropped_image = cvImg->image(cv::Range(0,1920), cv::Range(0,1080));
+cv::Mat cropped_image;
+cv::Mat converted_image;
+
+
+if (cam == 1) {
+  cropped_image = cvImg->image(cv::Rect(0, 0, 1920, 1080));
+} else if (cam == 2){
+  cropped_image = cvImg->image(cv::Rect(1920, 0, 1920, 1080));
+} else {
+  cropped_image = cvImg->image(cv::Rect(100, 100, 500, 500));
+}
+
+  // cv::cvtColor(cropped_image, converted_image, cv::COLOR_YUV2BGR_YUYV);
+
+// cv::Mat cropped_image = cvImg->image(cv::Rect(0, 0, 1920, 1080));
+
+  sensor_msgs::msg::Image::UniquePtr cropped_msg_unique = std::make_unique<sensor_msgs::msg::Image>();
+
+ 
+  //sensor_msgs::msg::Image::UniquePtr cropped_msg = 
+  cv_bridge::CvImage(std_msgs::msg::Header(), output_encoding_, cropped_image).toImageMsg(*cropped_msg_unique);
+
+
+  // FIXME: this does not have to copy
+  //auto outImg = std::make_unique<sensor_msgs::msg::Image>();
+
+  //auto cvConvertedImg = cv_bridge::cvtColor(cvImg, output_encoding_);
+  //cvConvertedImg->toImageMsg(*outImg);
+
+
+  return cropped_msg_unique;
+}
+
 
 bool V4L2Camera::checkCameraInfo(
   sensor_msgs::msg::Image const & img,

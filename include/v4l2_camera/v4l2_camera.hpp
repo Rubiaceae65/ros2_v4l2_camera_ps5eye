@@ -50,8 +50,20 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr info_pub_;
 
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_right_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr info_right_pub_;
+
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_left_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr info_left_pub_;
+
+
+
   // Publisher used for inter process comm
   image_transport::CameraPublisher camera_transport_pub_;
+  image_transport::CameraPublisher camera_right_transport_pub_;
+  image_transport::CameraPublisher camera_left_transport_pub_;
+
+
 
   std::shared_ptr<camera_info_manager::CameraInfoManager> cinfo_;
 
@@ -74,6 +86,9 @@ private:
   bool requestTimePerFrame(TimePerFrame const & timePerFrame);
 
   sensor_msgs::msg::Image::UniquePtr convert(sensor_msgs::msg::Image const & img) const;
+  sensor_msgs::msg::Image::UniquePtr convert_cvbridge(sensor_msgs::msg::Image const & img, int cam) const;
+
+
 
   bool checkCameraInfo(
     sensor_msgs::msg::Image const & img,
